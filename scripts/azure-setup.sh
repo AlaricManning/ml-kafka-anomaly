@@ -11,8 +11,8 @@ set -euo pipefail
 # ── Config — edit these ────────────────────────────────────────────────────────
 RESOURCE_GROUP="ml-kafka-rg"
 LOCATION="eastus"
-ACR_NAME="mlkafkaacr"          # must be globally unique, lowercase alphanumeric only
-AKS_CLUSTER="ml-kafka-aks"
+ACR_NAME="alaricmanningmlkafkaacr"          # must be globally unique, lowercase alphanumeric only
+AKS_CLUSTER="am-ml-kafka-aks"
 AKS_NODE_COUNT=2
 AKS_NODE_VM="Standard_B2s"    # 2 vCPU, 4 GB — enough for Kafka + 2 pods
 # ──────────────────────────────────────────────────────────────────────────────
