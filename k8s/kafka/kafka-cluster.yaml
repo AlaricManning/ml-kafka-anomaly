@@ -1,19 +1,37 @@
-# Single-node Kafka cluster via Strimzi operator.
-# Install Strimzi first:
-#   kubectl create -f 'https://strimzi.io/install/latest?namespace=ml-kafka' -n ml-kafka
-#
-# Then apply this file:
-#   kubectl apply -f k8s/kafka/kafka-cluster.yaml
+# KRaft mode (no ZooKeeper) — required for Strimzi 0.46+
+# KafkaNodePool handles replicas and storage; Kafka resource handles config and listeners.
 
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaNodePool
+metadata:
+  name: combined
+  namespace: ml-kafka
+  labels:
+    strimzi.io/cluster: kafka-cluster
+spec:
+  replicas: 1
+  roles:
+    - controller
+    - broker
+  storage:
+    type: jbod
+    volumes:
+      - id: 0
+        type: persistent-claim
+        size: 10Gi
+        deleteClaim: false
+---
 apiVersion: kafka.strimzi.io/v1beta2
 kind: Kafka
 metadata:
   name: kafka-cluster
   namespace: ml-kafka
+  annotations:
+    strimzi.io/node-pools: enabled
+    strimzi.io/kraft: enabled
 spec:
   kafka:
-    version: 3.7.0
-    replicas: 1
+    version: 4.1.0
     listeners:
       - name: plain
         port: 9092
@@ -25,19 +43,6 @@ spec:
       transaction.state.log.min.isr: 1
       default.replication.factor: 1
       min.insync.replicas: 1
-    storage:
-      type: jbod
-      volumes:
-        - id: 0
-          type: persistent-claim
-          size: 10Gi
-          deleteClaim: false
-  zookeeper:
-    replicas: 1
-    storage:
-      type: persistent-claim
-      size: 5Gi
-      deleteClaim: false
   entityOperator:
     topicOperator: {}
     userOperator: {}
