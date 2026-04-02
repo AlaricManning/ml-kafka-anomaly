@@ -1,6 +1,10 @@
 __pycache__/
 *.pyc
 .venv/
+ENV/
+env/
+.env
+.env.local
 
 # Generated model artifacts — not committed, baked into consumer image at build time
 model/artifacts/
