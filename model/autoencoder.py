@@ -1,0 +1,26 @@
+import torch
+import torch.nn as nn
+
+
+class Autoencoder(nn.Module):
+    def __init__(self, input_dim: int = 3):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, 16),
+            nn.ReLU(),
+            nn.Linear(16, 8),
+            nn.ReLU(),
+        )
+        self.decoder = nn.Sequential(
+            nn.Linear(8, 16),
+            nn.ReLU(),
+            nn.Linear(16, input_dim),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.decoder(self.encoder(x))
+
+    def reconstruction_error(self, x: torch.Tensor) -> torch.Tensor:
+        with torch.no_grad():
+            recon = self(x)
+            return torch.mean((x - recon) ** 2, dim=1)

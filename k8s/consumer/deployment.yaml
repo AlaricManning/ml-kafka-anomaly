@@ -1,0 +1,35 @@
+# Replace YOUR_ACR with your Azure Container Registry name, e.g. myregistry.azurecr.io
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer
+  namespace: ml-kafka
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: consumer
+  template:
+    metadata:
+      labels:
+        app: consumer
+    spec:
+      containers:
+        - name: consumer
+          image: YOUR_ACR.azurecr.io/ml-kafka/consumer:latest
+          env:
+            - name: KAFKA_BOOTSTRAP
+              value: kafka-cluster-kafka-bootstrap.ml-kafka:9092
+            - name: INPUT_TOPIC
+              value: sensor-readings
+            - name: OUTPUT_TOPIC
+              value: anomaly-alerts
+            - name: MODEL_DIR
+              value: /model
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
