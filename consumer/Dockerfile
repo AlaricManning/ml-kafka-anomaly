@@ -15,4 +15,4 @@ COPY autoencoder.py consumer.py ./
 # Model artifacts baked into image at /model
 COPY model/ /model/
 
-CMD ["python", "consumer.py"]
+CMD ["python", "-u", "consumer.py"]

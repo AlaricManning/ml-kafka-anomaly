@@ -200,7 +200,11 @@ This copies the model artifacts into the consumer build context and builds both 
 ### 5. Deploy to AKS
 
 ```bash
-# Strimzi operator
+# Create namespaces
+kubectl create namespace ml-kafka-staging
+kubectl create namespace ml-kafka-prod
+
+# Strimzi operator (installs into ml-kafka-staging; watches all namespaces by default)
 kubectl create -f 'https://strimzi.io/install/latest?namespace=ml-kafka-staging' -n ml-kafka-staging
 kubectl wait --for=condition=Ready pod -l name=strimzi-cluster-operator -n ml-kafka-staging --timeout=120s
 

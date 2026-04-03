@@ -53,10 +53,6 @@ echo "    $ACR_LOGIN_SERVER/ml-kafka/producer:latest"
 echo "    $ACR_LOGIN_SERVER/ml-kafka/consumer:latest"
 
 echo ""
-echo "==> Updating deployment yamls with ACR address"
-sed -i "s|YOUR_ACR.azurecr.io|$ACR_LOGIN_SERVER|g" \
-  "$ROOT/k8s/producer/deployment.yaml" \
-  "$ROOT/k8s/consumer/deployment.yaml"
-
-echo "    k8s/producer/deployment.yaml — updated"
-echo "    k8s/consumer/deployment.yaml — updated"
+echo "Deploy with Kustomize:"
+echo "  kubectl apply -k k8s/overlays/staging"
+echo "  kubectl apply -k k8s/overlays/prod"
