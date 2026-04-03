@@ -45,12 +45,17 @@ def on_delivery(err, msg):
         print(f"Delivery error: {err}")
 
 
-producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP})
-print(f"Producer started -> {KAFKA_BOOTSTRAP} / topic={TOPIC}")
+def run():
+    producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP})
+    print(f"Producer started -> {KAFKA_BOOTSTRAP} / topic={TOPIC}")
 
-while True:
-    sensor_id = random.choice(SENSOR_IDS)
-    reading = anomaly_reading(sensor_id) if random.random() < ANOMALY_RATE else normal_reading(sensor_id)
-    producer.produce(TOPIC, key=sensor_id, value=json.dumps(reading), callback=on_delivery)
-    producer.poll(0)
-    time.sleep(INTERVAL_S)
+    while True:
+        sensor_id = random.choice(SENSOR_IDS)
+        reading = anomaly_reading(sensor_id) if random.random() < ANOMALY_RATE else normal_reading(sensor_id)
+        producer.produce(TOPIC, key=sensor_id, value=json.dumps(reading), callback=on_delivery)
+        producer.poll(0)
+        time.sleep(INTERVAL_S)
+
+
+if __name__ == "__main__":
+    run()
