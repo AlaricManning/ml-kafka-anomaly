@@ -1,0 +1,130 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_NAME }}.azurecr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install torch numpy
+
+      - name: Train model
+        working-directory: model
+        run: python train.py
+
+      - name: Copy model artifacts into consumer build context
+        run: |
+          mkdir -p consumer/model
+          cp model/artifacts/model.pt model/artifacts/threshold.json model/artifacts/norm_params.json consumer/model/
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push producer image
+        run: |
+          az acr build \
+            --registry ${{ secrets.ACR_NAME }} \
+            --image ml-kafka/producer:${{ github.sha }} \
+            ./producer
+
+      - name: Build and push consumer image
+        run: |
+          az acr build \
+            --registry ${{ secrets.ACR_NAME }} \
+            --image ml-kafka/consumer:${{ github.sha }} \
+            ./consumer
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: build
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --name ${{ secrets.AKS_CLUSTER }} \
+            --overwrite-existing
+
+      - name: Set image tags for staging
+        run: |
+          cd k8s/overlays/staging
+          kustomize edit set image \
+            ml-kafka/producer=${{ env.ACR_LOGIN_SERVER }}/ml-kafka/producer:${{ github.sha }} \
+            ml-kafka/consumer=${{ env.ACR_LOGIN_SERVER }}/ml-kafka/consumer:${{ github.sha }}
+
+      - name: Deploy to staging
+        run: kubectl apply -k k8s/overlays/staging
+
+      - name: Wait for staging rollout
+        run: |
+          kubectl rollout status deployment/producer -n ml-kafka-staging --timeout=120s
+          kubectl rollout status deployment/consumer -n ml-kafka-staging --timeout=120s
+
+  deploy-prod:
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    environment: prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --name ${{ secrets.AKS_CLUSTER }} \
+            --overwrite-existing
+
+      - name: Set image tags for prod
+        run: |
+          cd k8s/overlays/prod
+          kustomize edit set image \
+            ml-kafka/producer=${{ env.ACR_LOGIN_SERVER }}/ml-kafka/producer:${{ github.sha }} \
+            ml-kafka/consumer=${{ env.ACR_LOGIN_SERVER }}/ml-kafka/consumer:${{ github.sha }}
+
+      - name: Deploy to prod
+        run: kubectl apply -k k8s/overlays/prod
+
+      - name: Wait for prod rollout
+        run: |
+          kubectl rollout status deployment/producer -n ml-kafka-prod --timeout=120s
+          kubectl rollout status deployment/consumer -n ml-kafka-prod --timeout=120s

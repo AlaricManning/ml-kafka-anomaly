@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ml-kafka-staging
+
+resources:
+  - ../../base
+
+images:
+  - name: ml-kafka/producer
+    newName: alaricmanningmlkafkaacr.azurecr.io/ml-kafka/producer
+    newTag: latest
+  - name: ml-kafka/consumer
+    newName: alaricmanningmlkafkaacr.azurecr.io/ml-kafka/consumer
+    newTag: latest
