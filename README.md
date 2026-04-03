@@ -24,7 +24,7 @@ Consumer
      └── anomaly → Kafka Topic: anomaly-alerts
 ```
 
-All three components run as pods inside an AKS cluster. Kafka is managed by the [Strimzi operator](https://strimzi.io/) in KRaft mode (no ZooKeeper).
+All three components run as pods inside an AKS cluster. Kafka is managed by the [Strimzi operator](https://strimzi.io/) in KRaft mode (no ZooKeeper). Kubernetes manifests are structured with [Kustomize](https://kustomize.io/) — a shared base is overlaid per environment (`staging`, `prod`), each deployed into its own namespace.
 
 ---
 
@@ -71,8 +71,26 @@ The producer injects anomalies at a configurable rate (default 5%). Each message
 | Model training | `model/` | Trains the autoencoder, saves artifacts |
 | Producer | `producer/` | Streams sensor readings to Kafka |
 | Consumer | `consumer/` | Reads from Kafka, runs inference, emits alerts |
-| Kubernetes manifests | `k8s/` | Strimzi Kafka cluster + app deployments |
+| Tests | `tests/` | pytest suite covering model, inference, and producer logic |
+| Kubernetes manifests | `k8s/` | Kustomize base + staging/prod overlays |
+| GitHub Actions | `.github/workflows/` | CI (tests on PR) and CD (build → staging → prod) |
 | Setup scripts | `scripts/` | Azure infra provisioning and image build/push |
+
+---
+
+## CI/CD
+
+Two GitHub Actions workflows handle testing and deployment:
+
+**CI** (`ci.yml`) runs on every pull request to `main`. It trains the model, then runs the full pytest suite. PRs cannot merge without a passing `test` check.
+
+**CD** (`cd.yml`) runs on every push to `main` and has three sequential jobs:
+
+1. **build** — trains the model, builds producer and consumer Docker images via ACR, and pushes them tagged with the git SHA.
+2. **deploy-staging** — runs automatically after build. Uses `kustomize edit set image` to stamp the SHA tag into `k8s/overlays/staging`, then applies the overlay to the `ml-kafka-staging` namespace on AKS.
+3. **deploy-prod** — requires manual approval via the GitHub `prod` environment. Same process as staging but targets the `ml-kafka-prod` namespace.
+
+Both workflows authenticate to Azure using OIDC (no long-lived secrets).
 
 ---
 
@@ -80,31 +98,43 @@ The producer injects anomalies at a configurable rate (default 5%). Each message
 
 ```
 ml-kafka-anomaly/
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                # Run tests on pull requests
+│       └── cd.yml                # Build, deploy staging, deploy prod
 ├── model/
-│   ├── autoencoder.py        # PyTorch model definition
-│   ├── train.py              # Training script, saves to model/artifacts/
+│   ├── autoencoder.py            # PyTorch model definition
+│   ├── train.py                  # Training script, saves to model/artifacts/
 │   └── requirements.txt
 ├── producer/
-│   ├── producer.py           # Kafka producer (sensor simulation)
+│   ├── producer.py               # Kafka producer (sensor simulation)
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── consumer/
-│   ├── consumer.py           # Kafka consumer + anomaly detection
-│   ├── autoencoder.py        # Copy of model definition for Docker build
+│   ├── consumer.py               # Kafka consumer + anomaly detection
+│   ├── autoencoder.py            # Copy of model definition for Docker build
 │   ├── Dockerfile
 │   └── requirements.txt
+├── tests/
+│   ├── test_autoencoder.py       # Model output shape and accuracy tests
+│   ├── test_inference.py         # Feature extraction and scoring tests
+│   ├── test_producer.py          # Producer reading generation tests
+│   └── requirements.txt
 ├── k8s/
-│   ├── namespace.yaml
-│   ├── kafka/
+│   ├── base/                     # Shared manifests (no namespace, placeholder images)
 │   │   ├── kafka-cluster.yaml    # Strimzi KafkaNodePool + Kafka (KRaft mode)
-│   │   └── kafka-topics.yaml     # sensor-readings + anomaly-alerts topics
-│   ├── producer/
-│   │   └── deployment.yaml
-│   └── consumer/
-│       └── deployment.yaml
+│   │   ├── kafka-topics.yaml     # sensor-readings + anomaly-alerts topics
+│   │   ├── producer-deployment.yaml
+│   │   ├── consumer-deployment.yaml
+│   │   └── kustomization.yaml
+│   └── overlays/
+│       ├── staging/              # Namespace: ml-kafka-staging, ACR image tags
+│       │   └── kustomization.yaml
+│       └── prod/                 # Namespace: ml-kafka-prod, ACR image tags
+│           └── kustomization.yaml
 └── scripts/
-    ├── azure-setup.sh        # Creates resource group, ACR, and AKS cluster
-    └── build-push.sh         # Builds images via ACR and patches deployment YAMLs
+    ├── azure-setup.sh            # Creates resource group, ACR, and AKS cluster
+    └── build-push.sh             # Builds images via ACR and patches deployment YAMLs
 ```
 
 ---
@@ -165,33 +195,28 @@ This creates the resource group, ACR, and AKS cluster, and merges the cluster cr
 ./scripts/build-push.sh <your-acr-name>.azurecr.io
 ```
 
-This copies the model artifacts into the consumer build context, builds both images in Azure (no local Docker required), and patches the ACR address into the deployment YAMLs.
+This copies the model artifacts into the consumer build context and builds both images in Azure (no local Docker required).
 
 ### 5. Deploy to AKS
 
 ```bash
-# Namespace
-kubectl apply -f k8s/namespace.yaml
-
 # Strimzi operator
-kubectl create -f 'https://strimzi.io/install/latest?namespace=ml-kafka' -n ml-kafka
-kubectl wait --for=condition=Ready pod -l name=strimzi-cluster-operator -n ml-kafka --timeout=120s
+kubectl create -f 'https://strimzi.io/install/latest?namespace=ml-kafka-staging' -n ml-kafka-staging
+kubectl wait --for=condition=Ready pod -l name=strimzi-cluster-operator -n ml-kafka-staging --timeout=120s
 
-# Kafka cluster and topics
-kubectl apply -f k8s/kafka/
+# Deploy staging environment
+kubectl apply -k k8s/overlays/staging
 
-# Wait for Kafka to be ready (takes ~2 minutes)
-kubectl wait kafka/kafka-cluster --for=condition=Ready --timeout=300s -n ml-kafka
-
-# Producer and consumer
-kubectl apply -f k8s/producer/
-kubectl apply -f k8s/consumer/
+# Wait for Kafka to be ready (~2 minutes), then check rollout
+kubectl wait kafka/kafka-cluster --for=condition=Ready --timeout=300s -n ml-kafka-staging
+kubectl rollout status deployment/producer -n ml-kafka-staging
+kubectl rollout status deployment/consumer -n ml-kafka-staging
 ```
 
 ### 6. Watch it run
 
 ```bash
-kubectl logs -f deployment/consumer -n ml-kafka
+kubectl logs -f deployment/consumer -n ml-kafka-staging
 ```
 
 Expected output:
@@ -212,7 +237,7 @@ All runtime settings are controlled via environment variables set in the deploym
 
 | Variable | Service | Default | Description |
 |---|---|---|---|
-| `KAFKA_BOOTSTRAP` | both | `kafka-cluster-kafka-bootstrap.ml-kafka:9092` | Kafka broker address |
+| `KAFKA_BOOTSTRAP` | both | `kafka-cluster-kafka-bootstrap:9092` | Kafka broker address |
 | `TOPIC` | producer | `sensor-readings` | Topic to publish to |
 | `INTERVAL_S` | producer | `0.5` | Seconds between messages |
 | `ANOMALY_RATE` | producer | `0.05` | Fraction of messages that are injected anomalies |
@@ -227,7 +252,7 @@ All runtime settings are controlled via environment variables set in the deploym
 To delete all Azure resources and stop incurring costs:
 
 ```bash
-az group delete --name ml-kafka-rg --yes
+az group delete --name <your-resource-group> --yes
 ```
 
 This deletes the AKS cluster, ACR, all storage, and everything else in the resource group.
