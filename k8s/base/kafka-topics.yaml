@@ -2,7 +2,6 @@ apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
   name: sensor-readings
-  namespace: ml-kafka
   labels:
     strimzi.io/cluster: kafka-cluster
 spec:
@@ -13,7 +12,6 @@ apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
   name: anomaly-alerts
-  namespace: ml-kafka
   labels:
     strimzi.io/cluster: kafka-cluster
 spec:

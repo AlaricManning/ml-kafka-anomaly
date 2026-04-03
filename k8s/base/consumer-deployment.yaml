@@ -1,9 +1,7 @@
-# Replace YOUR_ACR with your Azure Container Registry name, e.g. myregistry.azurecr.io
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: consumer
-  namespace: ml-kafka
 spec:
   replicas: 1
   selector:
@@ -16,10 +14,10 @@ spec:
     spec:
       containers:
         - name: consumer
-          image: alaricmanningmlkafkaacr.azurecr.io/ml-kafka/consumer:latest
+          image: ml-kafka/consumer:latest
           env:
             - name: KAFKA_BOOTSTRAP
-              value: kafka-cluster-kafka-bootstrap.ml-kafka:9092
+              value: kafka-cluster-kafka-bootstrap:9092
             - name: INPUT_TOPIC
               value: sensor-readings
             - name: OUTPUT_TOPIC
