@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: consumer
-          image: YOUR_ACR.azurecr.io/ml-kafka/consumer:latest
+          image: alaricmanningmlkafkaacr.azurecr.io/ml-kafka/consumer:latest
           env:
             - name: KAFKA_BOOTSTRAP
               value: kafka-cluster-kafka-bootstrap.ml-kafka:9092
